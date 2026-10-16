@@ -82,6 +82,7 @@ public:
     }
 
     void SetAttackLocalPort(uint16_t p) { m_attackLocalPort = p; }
+    void SetMitigation(bool enabled) { m_mitigationEnabled = enabled; }
 
 private:
     void HandleRead(Ptr<Socket> s) {
@@ -95,7 +96,25 @@ private:
             double t = Simulator::Now().GetSeconds();
             InetSocketAddress a = InetSocketAddress::ConvertFrom(from);
             uint16_t srcPort = a.GetPort();
-            std::string pktName = (srcPort == m_attackLocalPort) ? "attack" : "normal";
+
+            bool isAttack = (srcPort == m_attackLocalPort);
+
+            // Adaptive mitigation:
+            // when sustained overload is detected, drop attack traffic
+            // while allowing legitimate traffic to continue.
+            if (m_mitigationEnabled && m_mitigationActive && isAttack) {
+                ++m_droppedAttackPackets;
+
+                if (m_droppedAttackPackets <= 5) {
+                    std::cout << "MITIGATION: dropped attack packet at RSU "
+                              << m_bindAddr
+                              << " at t=" << t << "s\\n";
+                }
+
+                continue;
+            }
+
+            std::string pktName = isAttack ? "attack" : "normal";
             uint32_t plen = p->GetSize();
             ++m_eventCounter;
             std::ofstream f(m_csv, std::ios::app);
@@ -116,9 +135,43 @@ private:
         std::cout << "RSU " << m_bindAddr << " pps=" << pps
                   << " at t=" << Simulator::Now().GetSeconds() << "s\n";
 
-        if (!m_isCrashed && m_autoCrash) {
-            if (pps > m_overloadPps) ++m_consecOver; else m_consecOver = 0;
-            if (m_consecOver >= m_overloadConsec) {
+        if (!m_isCrashed) {
+            if (pps > m_overloadPps)
+                ++m_consecOver;
+            else
+                m_consecOver = 0;
+
+            // Adaptive mitigation does not crash the RSU.
+            // It filters attack traffic after sustained overload.
+            if (m_mitigationEnabled &&
+                !m_mitigationActive &&
+                m_consecOver >= m_overloadConsec) {
+
+                m_mitigationActive = true;
+
+                std::cout << "MITIGATION ENABLED at RSU "
+                          << m_bindAddr
+                          << " at t=" << Simulator::Now().GetSeconds()
+                          << "s (pps=" << pps << ")\\n";
+            }
+
+            // Stop filtering once traffic returns below the threshold.
+            if (m_mitigationEnabled &&
+                m_mitigationActive &&
+                pps <= m_overloadPps) {
+
+                m_mitigationActive = false;
+
+                std::cout << "MITIGATION DISABLED at RSU "
+                          << m_bindAddr
+                          << " at t=" << Simulator::Now().GetSeconds()
+                          << "s (pps=" << pps << ")\\n";
+            }
+
+            // Keep the original crash mechanism available when requested.
+            if (m_autoCrash &&
+                m_consecOver >= m_overloadConsec) {
+
                 NS_LOG_WARN("RSU overload -> crash");
                 ForceCrash();
             }
@@ -134,6 +187,11 @@ private:
     uint32_t m_consecOver{0}, m_windowCount{0};
     uint64_t m_eventCounter{0};
     uint16_t m_attackLocalPort{9003};
+
+    // Adaptive RSU overload mitigation
+    bool m_mitigationEnabled{false};
+    bool m_mitigationActive{false};
+    uint64_t m_droppedAttackPackets{0};
     std::function<void()> m_onCrash, m_onRecover;
 };
 
@@ -434,6 +492,7 @@ int main(int argc, char* argv[]) {
     double perAttackerPps=150.0;
     double attackRateAgg=0.0;
     bool autoCrash=false; double overloadPps=60.0; uint32_t overloadConsec=2; double recoverySeconds=10.0;
+    bool enableMitigation=false;
     bool packetMetadata = false;
     uint64_t maxPktsTrace = 20000000;
     double flashFactor = 0.3;
@@ -447,6 +506,7 @@ int main(int argc, char* argv[]) {
     cmd.AddValue("overloadPps","overload threshold pps",overloadPps);
     cmd.AddValue("overloadConsec","overload consecutive seconds",overloadConsec);
     cmd.AddValue("recoverySeconds","auto recovery seconds after crash",recoverySeconds);
+    cmd.AddValue("enableMitigation","enable adaptive RSU attack-traffic mitigation (1/0)",enableMitigation);
     cmd.AddValue("attackRate","aggregate attack rate (pps) to be divided across attackers (optional)",attackRateAgg);
     cmd.AddValue("packetMetadata","enable NetAnim packet metadata (0/1)",packetMetadata);
     cmd.AddValue("flashFactor","multiplier for normal interval during attack phase (<1 = faster)",flashFactor);
@@ -577,6 +637,7 @@ int main(int argc, char* argv[]) {
     sink2->Configure(ipRSU2, rsuPort, "rsu2_received.csv");
     sink2->SetOverloadControl(autoCrash, overloadPps, overloadConsec, recoverySeconds);
     sink2->SetAttackLocalPort(attackLocalPort);
+    sink2->SetMitigation(enableMitigation);
     sink2->SetStartTime(Seconds(0.0));
     sink2->SetStopTime(Seconds(runTime+2));
 
