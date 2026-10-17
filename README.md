@@ -8,7 +8,7 @@ The project models a highway VANET with normal vehicle communication and multipl
 
 Vehicular Ad Hoc Networks (VANETs) rely on communication between vehicles and roadside infrastructure such as RSUs. A DDoS attack can generate excessive traffic towards an RSU and degrade its ability to serve legitimate vehicles.
 
-This project studies the behaviour of a highway-based VANET under normal and DDoS attack conditions and introduces a lightweight RSU-side mitigation mechanism.
+This project studies a highway-based VANET under normal and DDoS attack conditions and introduces a lightweight RSU-side mitigation mechanism.
 
 The simulation uses:
 
@@ -53,31 +53,49 @@ The default overload parameters are:
 ```text
 Overload threshold: 60 packets/s
 Consecutive windows: 2
+```
 
 When the packet rate exceeds 60 packets/s for two consecutive monitoring windows, sustained overload is detected.
+
 The mitigation mechanism then:
+
 1. Activates RSU-side attack traffic control.
 2. Identifies attack traffic using its configured source port.
 3. Drops identified attack packets.
 4. Continues accepting legitimate traffic.
 5. Continues monitoring the RSU.
 6. Disables mitigation when traffic returns to the configured normal range.
+
 The mechanism is intentionally lightweight and does not use machine learning or a separate intrusion-detection system.
-Simulation Phases
+
+## Simulation Phases
+
 The simulation is divided into four phases:
-- Phase A — Normal Traffic: Vehicles communicate normally.
-- Phase B — DDoS Attack: Selected vehicles generate high-rate traffic towards RSU 2.
-- Phase C — RSU Failure: The baseline experiment can take RSU 2 offline after the attack.
-- Phase D — Recovery: RSU 2 is restored and communication resumes.
-Running the Simulation
+
+- **Phase A — Normal Traffic:** Vehicles communicate normally.
+- **Phase B — DDoS Attack:** Selected vehicles generate high-rate traffic towards RSU 2.
+- **Phase C — RSU Failure:** The baseline experiment can take RSU 2 offline after the attack.
+- **Phase D — Recovery:** RSU 2 is restored and communication resumes.
+
+## Running the Simulation
+
 The project is designed to run with NS-3.
-Example:
+
+### Baseline
+
+```bash
 python3.12 ./ns3 run "vanet_highway --N=40 --runTime=60 --attackStart=20 --attackEnd=40"
+```
 
-To enable adaptive mitigation:
+### With Adaptive Mitigation
+
+```bash
 python3.12 ./ns3 run "vanet_highway --N=40 --runTime=60 --attackStart=20 --attackEnd=40 --enableMitigation=true"
+```
 
-The main parameters can also be modified from the command line:
+### Available Parameters
+
+```text
 --N
 --runTime
 --attackStart
@@ -85,33 +103,46 @@ The main parameters can also be modified from the command line:
 --enableMitigation
 --overloadPps
 --overloadConsec
+```
 
-Output
+## Output
+
 The simulation can generate:
+
 - Packet reception statistics
 - CSV traffic measurements
 - PCAP packet traces
 - NetAnim XML output
 - Console output showing RSU traffic rates and mitigation events
+
 Example mitigation output:
+
+```text
 MITIGATION ENABLED at RSU ...
 MITIGATION: dropped attack packet ...
 MITIGATION DISABLED at RSU ...
+```
 
-Repository Structure
+## Repository Structure
+
+```text
 NS3-VANET-DDoS-Attack/
 ├── README.md
 ├── highway_topology.png
 └── vanet_highway.cc
+```
 
-Objectives
+## Objectives
+
 1. Study the effect of DDoS traffic on an RSU in a VANET.
 2. Monitor RSU traffic using packet-rate measurements.
 3. Detect sustained RSU overload.
 4. Implement lightweight adaptive attack-traffic mitigation.
 5. Preserve legitimate communication during mitigation.
 6. Compare network behaviour before and after mitigation.
-Technologies
+
+## Technologies
+
 - C++
 - NS-3
 - IEEE 802.11p
